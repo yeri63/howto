@@ -1,0 +1,795 @@
+#! /bin/bash
+
+# Program: howto.sh
+# Version: 1.28
+#    Date: 23-Sep-2025
+#  Author: gerry.walterscheid@gmail.com
+
+# Description:
+#
+# Provide Google-like searches of daily work notes.
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+# Initialize global variables.
+
+script="howto"
+path="/opt/docs"
+basePath="`echo $path | sed 's/\/[^\/]*//3g'`"
+
+pass1Data="$HOME/.howto-pass1.$$"
+pass2Data="$HOME/.howto-pass2.$$"
+
+content=4                       # Number of content lines to display for each hit.
+depth=512                       # Limit number of initial hits for faster results.
+
+rows=$(tput lines)                                 # Terminal session screen height.
+cols=$(tput cols)                                  # Terminal session screen width.
+matches=$(( (rows - 10 ) / (6 + content) ))         # Calculate how many results will fit.
+
+BOLD="$(tput bold)"             # Tagline
+GREEN="$(tput setaf 2)"         # Content File path.
+YELLOW="$(tput setaf 3)"        # Current page indicator color.
+BLUE="$(tput setaf 4)"          # Content Title.
+WHITE="$(tput setaf 7)"         # Script tagline, stats, content, and page numbers.
+NORM="$(tput setaf 9)"          # Reset to default color.
+
+start=0                         # CPU Start Time
+finish=0                        # CPU Finish/Stop Time
+delta=0                         # CPU Time for search.
+
+files=0                         # Total files found containing match.
+results=0                       # Total number of matches.
+
+valid_keys=""                   # Search keys which have hits.
+
+declare -a stop_words=( a able about across after all almost also am among an and any are as at be \
+                        because been but by can cannot could did do does either else ever every \
+                        for from get got had has have he her hers him his how however i if in into \
+                        is it its just least let like likely may me might most must my neither no \
+                        nor not of off often on only or other our own rather said say says she \
+                        should since so some than that the their them then there these they this \
+                        those to too us wants was we were what when where which while who whom why \
+                        will with would yet you your )
+
+tput civis                      # Make the cursor invisible.
+cd "$path"                      # Run all commands from archive path.
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+usage_error ()
+{
+    echo
+    echo "Quickly locate established procedure to complete a task."
+    echo "usage: $script [index] | [item1] [item2] [item3] ..."
+    echo
+    normalExit
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+screen_error ()
+{
+    echo
+    echo "Terminal window too small. Please increase the number of rows in your terminal display."
+    echo
+    normalExit
+}
+
+# =================================================================================================
+#  Search algorithm and supporting functions.
+# =================================================================================================
+
+stop_word ()
+
+# Remove stop words, ie common words, to eliminate excessive hits.
+
+{
+    my_key=$1
+
+    if [ ${#my_key} == 1 ]; then                # discard single character words, ie. length = 1.
+        return 0
+    fi
+
+    for word in ${stop_words[@]}; do
+        if [ "$my_key" == "$word" ]; then
+        return 0
+        fi
+    done
+
+    return 1
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+asterisk ()
+
+# Creates new grep search string when asterisks were added to the key, to search for parts of a word
+# instead of whole words.
+
+{
+    my_key=$1
+
+    if [[ $1 =~ "*". && $1 =~ ."*" ]]; then
+        echo ${my_key} | sed 's/*//g'
+
+    elif [[ $1 =~ "*". ]]; then
+        echo ${my_key#?}"\b"
+
+    elif [[ $1 =~ ."*" ]]; then
+        echo "\b"${my_key%?}
+
+    else
+        echo "\b"${my_key}"\b"
+    fi
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+Search ()
+
+# Search archive path for matching records containing search keys.
+
+{
+    echo
+    echo -n "Searching..."
+
+    start=$(date +"%s%N")
+
+    # Check for matching keys.
+
+    files=""
+    key="$1"
+    hit=""
+    miss=""
+
+    while (( ( $# > 0 ) )); do
+        # Discard keys which are stop words, to reduce false hits.
+
+        if ! stop_word $key; then
+            # Check for asterisks in key, and adjust grep search string accordingly.
+
+            search=$(asterisk $key)
+
+            # Collect list of files containing the current key.
+
+            key_files="`grep -il "$search" *.txt`"
+
+            if (( ${#key_files} == 0 )); then
+                miss="$miss $key"
+            else
+                hit="$hit $key"
+                files="$files"$'\n'"$key_files"
+            fi
+        fi
+
+        # Get next search key.
+
+        shift
+        key="$1"
+    done
+
+    # No match was found with any key. Update user and exit.
+
+    if (( ${#hit} == 0 )); then
+        echo
+        echo "Your search did not match any keys."
+        echo
+        echo "Suggestions:"
+        echo
+        echo "- Make sure all words are spelled correctly."
+        echo "- Search parts of words by adding an asterisk."
+        echo "- Try different keywords."
+        echo "- Try more general keywords."
+        echo
+        normalExit
+    fi
+
+    valid_keys=`echo $hit`                                                      # trim spaces from valid keys.
+    files=`echo $files | xargs -n1 | sort -u | xargs`                           # sort and remove duplicate files.
+    touch $pass1Data
+
+    # Extract article/node for each key. Do not exceed article boundries.
+
+    for key in `echo $hit`; do
+
+        # Check for asterisks in key, and adjust grep search string accordingly.
+
+        search=$(asterisk $key)
+
+        for filename in $files; do
+            grep -EHin "^--$|^ Date:|$search" $filename |\
+
+            # Accumulate single key hits in pass1.dat file.
+            # Find key hits within articles, ignoring duplicates. Articles are separated by "--" string.
+
+            awk -F ":" -v key=$key '
+
+                BEGIN { i = 0; keys_matched = 1; node_ndx = 1; hits = 0;
+                        months = "  JanFebMarAprMayJunJulAugSepOctNovDec"; }
+
+                /Date/ { split($4, a, " ");
+                         split(a[1], d, "-");
+                         date = sprintf("%4d-%02d-%02d", d[3], index(months,d[2])/3, d[1]);
+                         next; }
+
+                /:--$/ { if ( file[0] != $1 ) {
+                             node_ndx = 1;
+                             file[0] = $1; }
+
+                         if ( i > 0 ) {
+                             node_len = $2 - node_ndx;
+                             print keys_matched, date, hits, file[0], node_ndx, node_len, key_ndx[0], key;
+                             hits = 0;
+                             i = 0; }
+
+                         node_ndx = $2 + 1; }
+
+                !/:--$/ { if ( file[0] != $1 ) {
+                              if ( i > 0 ) {
+                                  "wc -l < "file[0] | getline stop;
+                                  node_len = stop - node_ndx;
+                                  print keys_matched, date, hits, file[0], node_ndx, node_len, key_ndx[0], key; }
+
+                              i = 0;
+                              node_ndx = 1; }
+
+                          hits++;
+                          file[i] = $1;
+                          key_ndx[i++] = $2; }
+
+                END { if ( i > 0 ) {
+                         "wc -l < "file[0] | getline stop;
+                         node_len = stop - node_ndx;
+                         print keys_matched, date, hits, file[0], node_ndx, node_len, key_ndx[0], key; } }' >> $pass1Data
+
+        done
+    done
+
+    # Process valid search keys, accumulating the results in pass2.dat.
+
+    for key in `echo $hit`; do
+        >&2 echo -n "."                                 # show progress during search.
+
+        while read keys_matched date key_hits filename node_ndx node_len key_ndx key_list; do
+            # Check for asterisks in key, and adjust grep search string accordingly.
+
+            search=$(asterisk $key)
+
+            # Don't check for the same key twice.
+
+            if [[ $key_list =~ $search ]]; then
+                echo $keys_matched $date $key_hits $filename $node_ndx $node_len $key_ndx $key_list
+                continue;
+            fi
+
+            # Look for a match, returning exit status 0 if found.
+
+            hits=`tail -n +$node_ndx $filename | head -$node_len | grep -ic "$search"`
+
+            if (( $hits > 0 )); then
+                (( keys_matched++ ))
+                (( key_hits += hits ))
+                key_list="$key_list $key"
+            fi
+
+            # Update pass.dat record with new search results.
+
+            echo $keys_matched $date $key_hits $filename $node_ndx $node_len $key_ndx $key_list
+
+        done < $pass1Data  > $pass2Data
+
+        cp $pass2Data $pass1Data                        # pass results back for next search.
+    done
+
+    # Sort results so that the records with the most hits are shown first, and eliminate duplicates.
+
+    >&2 echo -e "\nSorting results..."
+
+    sort -u -k1,5r $pass1Data  > $pass2Data
+
+    # Collect stats and generate summary.
+
+    files=`awk '{ print $3 }' < $pass2Data | sort -u | wc -l`
+    results=`wc -l < $pass2Data`
+
+    finish=$(date +"%s%N")
+    delta=`echo -e "scale=3; (($finish-$start)/1000000000)" | bc`
+}
+
+# =================================================================================================
+#  Results algorithm and supporting functions.
+# =================================================================================================
+
+clearScreen ()
+{
+    # Automatically adjust output in width if terminal window changes. Do not do the same with
+    # rows, as this will either cause the program to exit prematurely or generate a subscript error.
+
+    clear
+
+    tagline="howto - Quickly locate notes, reference material, or established process."
+
+    col=$(( cols/2 - ${#tagline}/2 ))
+    if (( col < 0 )); then
+        col=0
+    fi
+
+    tput cup 1 $col                                     # Posiiton cursor on line 0.
+    printf "%s%s" $WHITE "$tagline"                     # Display centered tagline.
+    tput cup 4 0                                        # Position cursor on line 3.
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+cleanupText ()
+
+# Cleanup query results prior to printing. Add commands as needed to this function.
+{
+    # Check for terminal window border changes.
+
+    cols=$(tput cols)                                   # Terminal session screen width.
+
+    # dos2unix conversion.
+    # Delete everything following task, ie. --.
+    # Delete everything following subtask, ie. ---
+    # Delete 1st line if blank.
+    # Supress multiple blank lines.
+    # Format text with current terminal frame.
+    # Limit search results within window to $content lines.
+    # Delete last blank line, to avoid double blank line at bottom of content.
+    # Required to avoid loosing last line of text.
+
+    sed 's/^M//' | \
+    sed '/^--$/,$ d' | \
+    sed '/^---$/,$ d' | \
+    sed '1{/^$/d}' | \
+    cat -s | \
+  # fmt -s -w $(( cols - 10 )) | \
+    bulletAlign $(( cols - 10 )) | \
+    head -$content
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+orphanControl ()
+
+# Eliminate 1 line orphans from the search results content.
+
+{
+    awk '    { a[i++] = $0 }
+
+         END { for (j=0; j<i-2; j++)
+                   print a[j];
+
+               if (a[i-2] != "")
+                   { print a[i-2];
+                     print a[i-1]} }'
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+leftAlign ()
+
+# For any extracted content that had been indented, left align to the first non-space column, so that
+# all results are uniform, to the same left margin for easier readability.
+
+{
+    awk 'BEGIN { min = 40; }
+
+         { a[i++] = $0;
+           len = length($0);
+
+           for (j=0; j<len; j++)
+              if (substr($0,j,1) != " ")
+                  break;
+
+           if ((j < min) && (length($0) > 0))
+               min = j; }
+
+         END { for (j=0; j<i; j++) {
+                   len = length(a[j]);
+                   print substr(a[j],min,len-min+1); } }'
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+bulletAlign ()
+
+# Automatically wrap long text following a bullet or command prompt, so that the left alignment is
+# not with the bullet, but with the text immediately following the bullet, for easier readibility.
+
+{
+    awk -v width=$1 '
+        BEGIN { spaces = "                    "; }
+
+        { # Reset line settings.
+
+          pos1 = 1; pos2 = 1; offset = 0;
+          lineLength = length($0);
+
+          # Look for bullet. If found, set indent length.
+
+
+          switch ($1) {
+              case /[A-Z]\./ :
+              case /[A-Z])/ :
+              case /[a-z]\./ :
+              case /[a-z])/ :
+              case /[0-9]\./ :
+              case /[0-9])/ :
+              case /Note:/ :
+              case /Tip:/ :
+              case /Important:/ :
+              case /Caution:/ :
+              case /Warning:/ :
+              case "-" :
+              case "$" :
+              case "#" :
+                  indent = index($0, $1) + length($1);
+                  break;
+
+              default :
+                  indent = index($0, $1) - 1;
+              }
+
+
+        # Print the line with auto wrap and indent.
+
+        do {
+            # Define the end position of the line segment.
+
+            segment = pos1 + width - offset;
+            pos2 = 0;
+
+            # Locate last space separator within segment,
+            # to determine segment bounderies as defined
+            # by pos1 to pos2.
+
+            if (segment < lineLength) {
+                for (pos = pos1 + 1; pos <= segment; pos++)
+                    if (substr($0, pos, 1) == " ")
+                        pos2 = pos; }
+            else
+                pos2 = lineLength;
+
+            # If no spaces were found, print whole segment.
+
+            if (pos2 == 0)
+                pos2 = segment;
+
+            # Add left indent for all lines created using
+            # word wrap following the initial line with
+            # the bullet using offset variable.
+
+            printf "%s%s\n", substr(spaces,1,offset), substr($0, pos1, pos2 - pos1 + 1);
+
+            # Prevent long URLs from inhibiting content output. (disabled)
+
+            # if (pos2 > width - offset)
+            #    break;
+
+            # Remove any leading spaces from beginning of
+            # next line to maintain left alightment.
+
+            pos1 = pos2;
+            while (substr($0, ++pos1, 1) == " ");
+
+            offset = indent;
+
+            } while (pos2 < lineLength)
+        }'
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+progressBar ()
+
+# Display a progress bar along the bottom of the screen, showing the pages of results.
+
+{
+    (( min = (queryIndex / (matches * 10)) * 10 ))
+    (( max = ( ( (i * 10) / matches) + 8) / 10 - 1 ))
+    (( current = queryIndex / matches ))
+
+    if [ $(( max - min )) -gt 9 ]; then
+        (( max = min + 9 ))
+    fi
+
+    bar=$(printf "%s<%s " $BLUE $WHITE)
+
+    for (( page = min; page <= max ; page++ )); do
+        if [ $current -eq $page ]; then
+            bar=$(printf "%s %s%3s%s" "$bar" $YELLOW "$(( page + 1 ))" $WHITE)
+        else
+            bar=$(printf "%s %3s" "$bar" "$(( page + 1 ))")
+        fi
+
+        if [ $page -eq $max ]; then
+            bar=$(printf "%s%s   %s>%s" $WHITE "$bar" $BLUE $WHITE)
+            break
+        fi
+    done
+
+    (( row = rows - 2 ))
+    col=$(( cols/2 - ((page - (page - 1)/10*10) * 4 + 10)/2 ))
+
+    tput cup $row $col                                          # Move cursor to bottom of screen.
+
+    echo -n "$bar"
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+normalExit ()
+
+# Normal exit from the script, resetting terminal colors and cursor position.
+
+{
+    # tput rmcup                                                # Restore terminal screen content.
+    tput cnorm                                                  # Reset cursor to normal state.
+    tput sgr0                                                   # Turn off all text effects.
+
+    tput cup $rows 0                                            # Move cursor to bottom of screen.
+
+    rm -f $pass1Data                                            # Remove session search data.
+    rm -f $pass2Data
+
+    exit 0
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+resultsMenu ()
+
+# Display the query result, showing the Title (date from Daily Log), shortened filepath, position
+# within the file, and a short one paragraph excerpt.
+
+{
+    clearScreen
+
+    printf "  About %'.f results in %s files (%0.3f seconds).\n" $results $files $delta
+    printf "  Showing results for %s %s\n\n\n" "$valid_keys"
+
+    for (( k=0; k!=matches && (j+k)<i; k++ )); do
+
+        (( menuNumber = k + 1 ))
+        (( queryIndex = j + k ))
+
+        # Extract the node/article title.
+
+        title=`tail -n +${node_ndx[queryIndex]} "$path/${filename[queryIndex]}" | head -5 | \
+              awk '/Title:/ { $1 = ""; print; exit }'`
+
+        printf "  %s%s.%s%s\n" $BLUE "$menuNumber" "$title" $NORM
+        printf "     %s%s/.../%s, line=%s%s\n\n" $GREEN "$basePath" \
+               "${filename[queryIndex]}" \
+               "${key_ndx[queryIndex]}" $NORM
+
+        # After cleanup, orphan control, and alignment, then indent and remove trailing blank lines.
+
+        printf "%s" $WHITE
+
+        tail -n +${key_ndx[queryIndex]} "$path/${filename[queryIndex]}" | head -$content | \
+            cleanupText | \
+            orphanControl | \
+            leftAlign | \
+            sed '1,$s/^/        /' | \
+            sed '$ {/^[[:space:]]*$/d;}'
+
+        # Show the list of missing keys based on which keys were found.
+
+        if (( ${#key_list[queryIndex]} < ${#valid_keys} )); then
+            valid=$1
+            hits=$2
+
+            printf "        %sMissing: %s" $YELLOW
+
+            for key in $valid_keys; do
+                if [[ ! ${key_list[queryIndex]} =~ $key ]]; then
+                    echo -n "$key "
+                fi
+            done
+            echo
+        fi
+
+        printf "%s\n" $WHITE
+        echo
+    done
+
+    progressBar
+}
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+Results ()
+{
+    i=0                                 # monitor number of hit records.
+
+    # Read search results to arrays for quick access.
+
+    while read null null null filename[$i] node_ndx[$i] node_len[$i] key_ndx[$i] key_list[$i]; do
+        (( i++ ))
+    done < $pass2Data
+
+    # Main report loop, used to quickly preview search hits via a simple menu.
+
+    for (( j=0; j<i; j+=matches )); do
+        resultsMenu
+
+        while read -rsn1 keypress; do
+
+            # Check for terminal window border changes.
+
+            new_cols=$(tput cols)                               # Terminal session screen width.
+            new_rows=$(tput lines)                              # Terminal session screen height.
+
+            # If the screen height is too low, exit.
+            if (( new_rows < 20 )); then
+                clear
+                screen_error
+            fi
+
+            # If the screen rows have changed, restart the main report loop.
+
+            if (( rows != new_rows || cols != new_cols )); then
+                rows=$new_rows
+                cols=$new_cols
+
+                matches=$(( (rows - 10 ) / (6 + content) ))     # Calculate how many results will fit.
+                j=0                                             # Go back to 1st page in menu.
+                resultsMenu
+            fi
+
+            case "$keypress" in
+                $'\x1b' )               # process ESC sequence.
+                    read -rsn1 -t 0.1 tmp
+                    if [[ "$tmp" == "[" ]]; then
+                        read -rsn1 -t 0.1 tmp
+
+                        case "$tmp" in
+                            5 ) # PgUp
+                                continue;;
+
+                            6 ) # PgDn
+                                continue;;
+
+                            A ) # Up
+                                continue;;
+
+                            B ) # Down
+                                continue;;
+
+                            C ) # Right
+                                if (( j <= ( i - matches - 1) )); then
+                                    break
+                                fi;;
+
+                            D ) # Left
+                                if (( j > 0 )); then
+                                    (( j -= $matches ))
+                                    continue
+                                fi;;
+                        esac
+                    fi
+
+                    # Flush "stdin" with 0.1 sec timeout.
+                    read -rsn5 -t 0.1;;
+
+               # Other one byte (char) cases.
+
+                [123456789] ) # Menu Selection
+                    if (( keypress <= k )); then
+                        itemIndex=$(( j + keypress - 1 ))
+
+                        # Display the entire article/node surrounding the matched text,
+                        # to include context and/or relevant notes.
+
+                        # Generate new lineBreak string, matching the terminal width.
+
+                        lineBreak=""
+                        for (( k = 1; k < cols/3; k++ )); do
+                            lineBreak="$lineBreak --"
+                        done
+
+                        # Generate pattern for less to highlight search keys.
+
+                        pattern=`echo ${key_list[itemIndex]} | sed 's/ /|/g'`
+
+                        tail -n +${node_ndx[itemIndex]} ${filename[$itemIndex]} | head -${node_len[itemIndex]} | \
+                            sed "s/^-- -- --/$lineBreak/" | \
+                          # fmt -s -w $cols | \
+                            bulletAlign $(( cols - 4)) | \
+                            sed 's/^/  /' | \
+                            sed '1s/^/'$WHITE'/' | \
+                            less -cir # -p $pattern -m
+
+                        resultsMenu
+                    fi
+                    continue;;
+
+                $'\x0' ) # Next
+                    if (( j <= ( i - matches - 1) )); then
+                        break
+                    fi;;
+
+                b ) # Prev
+                    if (( j > 0 )); then
+                        (( j -= $matches ))
+                        resultsMenu
+                        continue
+                    fi;;
+
+                q ) # Quit
+                    normalExit;;
+            esac
+        done
+    done
+}
+
+
+# ------- --------- --------- --------- --------- --------- --------- --------- --------- ---------
+
+toc ()
+
+# Display a Table of Contents, to quickly see what information is available or lacking. This also
+# helps to drive further content generation to cover more daily activities.
+
+{
+    echo
+    echo "  Index of articles available within the HowTo database, grouped by vendor."
+    echo
+    echo "     Vendor  Article Title"
+    echo "     ------  -------------"
+
+    grep Title: *.txt | sed 's/Title://g; s/.txt//g' | awk '
+
+        BEGIN  { prev = "" }
+
+               { split($0,a,":") }
+
+        NR > 1 { if ( prev != a[1] )
+                     print "" }
+
+               { printf("  %9s %s\n", a[1], a[2]);
+                 prev = a[1] }
+
+        END    { print "" }'
+
+   exit 0
+}
+
+# =================================================================================================
+#  Script begins here.
+# =================================================================================================
+
+if (( $# == 0 )); then
+    usage_error
+    exit 1
+fi
+
+if [ "$1" == "index" ]; then
+    toc
+fi
+
+if (( $rows < 20 )); then
+    screen_error
+    exit 1
+fi
+
+Search "$@"
+Results
+
+# Init
+
+# Search_Archives
+#   Define_Scope
+#   Init_Pass
+#   Next_Pass
+
+# Display_Results
+#   Screen_Header
+#   Results_Page
+#   Navigation_Footer
+#   User_Input
+#   Display_Detail
