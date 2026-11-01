@@ -1,0 +1,866 @@
+
+Title: Add host to SAN fabric.
+ Date: 04-Oct-2018
+ Tags: admin, SAN, switch, host
+
+Add a host to the SAN fabric, usually done before allocating storage from the array. Because the fabric plays a central role connecting devices, this provides the logical location to validate fibre connectivity to the host, and confirmation of the pWWN values from the HBAs. These same pWWNs will be required on the storage array to map storage to the host.
+
+
+a) Review SAN storage configuration.
+
+   Collect the host pWWN for each HBA connected to the SAN.
+
+
+b) Confirm that the host HBAs are visible on the SAN.
+
+   Confirm the switch port for this host is Online.
+     # sw-report.sh find port <hostwwn>
+       or
+     switch:admin> nodefind <wwn>|<alias> (see notes)
+     switch:admin> fabricshow
+     switch:admin> switchshow
+
+   Enable the swtich port if disabled.
+     switch:admin> portcfgpersistentenable -i <index>
+
+   Confirm the this host alias does not already exist on either fabric.
+     # sw-report.sh find alias <hostwwn>|<hostname>
+       or
+     switch:admin> alishow * | grep <alias> -A 1
+       or
+     switch:admin> alishow * | grep <wwn> -B 1
+
+
+c) Update the SAN configuration for each fabric.
+
+   Create the host alias.
+     switch:admin> alicreate "<aliName>","<member>[; <member>...]"
+
+   Create and add the host zone, or add to the peerzone of the array port.
+     switch:admin> zonecreate "<zonename>", "<member>[; <member>...]"
+     switch:admin> cfgadd "<cfgName>", "<member>[; <member>...]"
+       or
+     switch:admin> zonecreate --peerzone "<zonename>" -principal "<principal>[; <principal>...]" [-members "<member>[; <member>...]"]
+     switch:admin> zoneadd --peerzone "<zonename>" -members "<member>[; <member>...]"
+
+   Save the changes to the SAN fabric.
+     switch:admin> cfgsave
+     switch:admin> cfgenable "<cfgName>"
+
+
+d) Update the SAN fabric switch portname. (skip for virtual hosts)
+
+   Confirm the index/port for this host is available (no entry).
+     # sw-report.sh find port <hostwwn>|<hostname>
+       or
+     switch:admin> portname
+
+   Create the portname entry.
+     switch:admin> portname -i <index> -n "<name>"
+
+
+Notes:
+
+- The switch and port where the host is connected can be identified using the nodefind and fabricshow commands. Use nodefind to determine the switch (Fabric Port Name) and port (Port Index) of the host. Next, use fabricshow to lookup the switch name based on the Fabric Port Name from the previous command. After logging onto this switch, switchshow is used to determine the state of the host connection.
+
+- If peer zones are used, please confirm the peer zone already exists within the SAN fabric configuration. If it does not, add it using the cfgadd and cfgenable commands.
+
+--
+
+Title: Remove host from SAN fabric.
+ Date: 14-Jun-2019
+ Tags: admin, switch, host, reclaim, decommission
+
+Removing a host from the SAN fabric, usually done during the cleanup phase of de-commission work. This effectively disconnects the host from it's allocated storage on the array, allowing SAN storage reclamation to proceed on the array. A check should be made prior, to verify the host has been shutdown, as indicated by the switch reporting that these pWWNs are no longer present, and the switch port is offline (unless virutalized behind another server), before proceeding.
+
+
+a) Review SAN fabric zoning configuration.
+
+   Identify the zones containing the host for each fabric...
+     # sw-report.sh find zone <node>
+
+
+b) Verify the host has been shutdown.
+
+   Confirm the switch port for this host is Offline.
+     # sw-report.sh find port <node>
+       or
+     switch:admin> nodefind <node> (see notes)
+     switch:admin> fabricshow
+     switch:admin> switchshow (run from switch connected to host)
+
+  Confirm the fabric where this host was configured.
+     # sw-report.sh find alias <alias>
+       or
+     switch:admin> alishow * | grep <alias> -A 1
+
+
+c) Update the SAN configuration for each fabric.
+
+   Remove and delete the host zone, or remove from peerzone.
+     switch:admin> cfgremove "<cfgName>","<member>[; <member>...]"
+     switch:admin> zonedelete "<zonename>"
+       or
+     switch:admin> zoneremove --peerzone "<peerzone>" -principal "<principal>" -members "<member>[; <member>...]"
+
+   Delete the host alias.
+     switch:admin> alidelete "<aliName>"
+
+   Save the changes to the SAN fabric.
+     switch:admin> cfgsave
+     switch:admin> cfgenable "<cfgName>"
+
+
+d) Update the SAN fabric switch port on each fabric.
+
+   Locate the index/port of the host.
+     # sw-report.sh find port <node>
+       or
+     switch:admin> portname
+
+   Check for other hosts using the same host switch port.
+     # sw-report.sh <switchname>
+       or
+     switch:admin> switchshow
+
+   If other hosts were found, stop here. (see notes)
+
+   Disable the switch port.
+     switch:admin> portcfgpersistentdisable -i <index>
+
+   Remove the portname entry.
+     switch:admin> portname -i <index> -n ""
+
+
+Notes:
+
+- The switch and port where the host is connected can be identified using the nodefind and fabricshow commands. Use nodefind to determine the switch (Fabric Port Name) and port (Port Index) of the host. Next, use fabricshow to lookup the switch name based on the Fabric Port Name from the previous command. After logging onto this switch, use switchshow to determine the state of the host connection.
+
+- If the host was virtualized, the host switch port is probably in use by other virtualized hosts. Do not alter the port, as doing so will affect the other hosts currently connected and my create an outage.
+
+- To update the host switch portname, login to the switch where the host is connected and issue the portname command. For virtualized hosts, leave the portname unchanged.
+
+--
+
+Title: Add user ssh credentials to Brocade fabric switch.
+ Date: 28-Feb-2019
+ Tags: admin, ssh, switch
+
+Add ssh credentials to allow automatic authentication access to Brocade fabric switch. This is required when using scripts to collect or alter the SAN fabric without stopping to query for login credentials.
+
+
+a) Review SSH information.
+
+   Determine the IP address of the host containing SSH public key.
+     # nslookup $HOSTNAME
+
+   Locate the remote directory and SSH public key name.
+     # ls $PWD/.ssh/*.pub
+
+   If the key is missing, create a new ssh key pair.
+     # ssh-keygen
+
+
+b) Add user SSH credentials.
+
+   Log into the fabric switch.
+     # ssh <switchname>|<switch IP>
+
+   Configure SSH authentication, using information previously collected.
+     switch:user> sshutil importpubkey
+
+     Enter user name for whom key is imported: 
+     Enter IP address: 
+     Enter remote directory: 
+     Enter public key name(must have .pub suffix): 
+     Enter login name: 
+     user@nnn.nnn.nnn.nnn's password: 
+     public key is imported successfully.
+
+c) Verify user SSH access.
+
+   If setup correctly, no password prompt will occur.
+
+   Log into the fabric switch.
+     # ssh <switchname>|<switch IP>
+
+--
+
+Title: Change host HBA on SAN fabric.
+ Datq: 11-Feb-2019
+ Tags: admin, rename, replace
+
+When a host HBA is replaced or hostname changed, various SAN components with the fabric and storage array need to be updated. If an HBA was replaced, all volumes/disks on the SAN using this path will be unavailable until these changes are made.
+
+
+1. Update the SAN fabric.
+
+  a) Review the SAN storage configuration.
+
+     Collect the new host WWNs for each SAN fabric.
+
+
+  b) Confirm that the new WWNs are visible on the SAN.
+
+     Confirm the switch port for this host is Online.
+       # sw-report.sh find port <hostwwn>
+           or
+       switch:admin> nodefind <hostwwn> (see notes)
+       switch:admin> fabricshow
+       switch:admin> switchshow
+
+     Confirm an alias for the new WWNs do not exist on either fabric.
+       # sw-report.sh find alias <hostwwn>
+         or
+       switch:admin> alishow * | grep <hostwwn> -B 1
+
+
+  c) Update the SAN configuration for each fabric.
+
+     Change the host alias to match the new WWN.
+       switch:admin> aliadd "<aliName>", "<member>[; <member>...]"
+       switch:admin> aliremove "<aliName>","<member>"
+
+     Add the new WWN to the zone used by the host.
+       switch:admin> zoneadd "<zonename>","<member>"
+         or
+       switch:admin> zoneadd --peerzone "<zonename>" -members "<member>[; <member>...]"
+
+     Remove the old WWN from the zone.
+       switch:admin> zoneremove "<zonename>","<member>"
+        or
+       switch:admin> zoneremove --peerzone "<zonename>" -members "<member>[; <member>...]"
+
+     Save the changes to the SAN fabric.
+       switch:admin> cfgsave
+       switch:admin> cfgenable "<cfgName>"
+
+
+2. Update the SAN array.
+
+   Complete steps in "Change host HBA on G1000 array."
+
+--
+
+Title: Default the Fabric ports and Disable.
+ Date: 01-Apr-2019
+ Tags: admin, switch, host, decommission
+
+Reset a SAN switch port back to its initial state (reset port settings, remove portname and persistently disable). This would be typically done during the host decommision process, followed by storage cleanup on the array.
+
+
+a) Review the SAN swith configuration.
+
+   Identify the port number.
+     switch:admin> portname | grep <member>
+
+   Locate the switch slot and port number.
+     switch:admin> switchshow
+
+
+b) Update the switch configuration.
+
+   Restore the port configuration to defaults.
+     switch:admin> portcfgdefault [<SlotNumber>/]<PortNumber> 
+
+   Persistently disable a port.
+     switch:admin> portcfgpersistentdisable -i <index1>-<index2>
+
+
+c) Verify changes to the SAN switch configuration.
+
+   Confirm the portnames have been removed.
+     switch:admin> portname
+
+   Confirm the port status is Disabled (Persistent).
+     switch:admin> switchshow
+
+--
+
+Title: Convert Peer Zone from WWN to Alias member format.
+ Date: 01-Apr-2019
+ Tags: admin, switch, host, zones
+
+Prior to FOS 8.1, Peer Zones only supported WWN members, which made identification of Host members within these zones rather difficult. From FOS 8.1 onwards, aliases are now allowed, similar to the manner used in non-peer zones. Some manual steps are required for each peer zone to use this new format.
+
+
+a) Review the SAN swith configuration.
+
+   Identify the current Peer Based Zones.
+     # sw-report.sh find zone ZPB
+       or
+     switch:admin> zoneshow <pattern>
+
+   Identify the Alias and WWNs for the hosts used within the Peer Zones.
+     switch:admin> aliasshow *
+
+
+b) Update the switch configuration.
+
+   Add the new WWN alias to the Peer Zone.
+     switch:admin> zoneadd "<zonename>","<member>"
+       or
+     switch:admin> zoneadd --peerzone "<zonename>" -members "<member>[; <member>...]"
+
+   Remove the old WWN from the Peer Zone.
+     switch:admin> zoneremove "<zonename>","<member>"
+       or
+     switch:admin> zoneremove --peerzone "<zonename>" -members "<member>[; <member>...]"
+
+   Save the changes made to the SAN Fabric.
+     switch:admin> cfgsave
+     switch:admin> enable <fabric>
+
+
+c) Verify the changes made to the SAN Fabric configuration.
+
+   Identify the current Peer Zones.
+     # sw-report.sh find zone ZPB
+       or
+     switch:admin> zoneshow <pattern>
+   
+--
+
+Title: Migrate host within the SAN (fabric switches).
+ Date: 05-Aug-2019
+ Tags: admin, migration, move, relocate
+
+Migrate a host within the SAN, to different ports on the same storage array, or a completely different storage device. This a two-step process, involving both a reconfiguration of the SAN Fabric, and the HostGroup ports on the storage array. The process described below only covers the work involved on the fabric switches.
+
+
+a) Review SAN storage configuration.
+
+   Collect the host pWWN for each HBA connected to the SAN.
+
+   Collect the current and future zone name and members.
+     # sw-report.sh find zone <hostwwn>|<hostname>|<zonename>
+       or
+     switch:admin> zoneshow <zonename>
+       or
+     switch:admin> zoneshow * | grep <alias>|<hostwwn> -A 10 -B 10
+
+
+b) Confirm that the host HBAs are visible on the SAN.
+
+   Confirm the switch port for this host is Online.
+     # sw-report.sh find port <hostwwn>
+       or
+     switch:admin> nodefind <wwn>|<alias> (see notes)
+     switch:admin> fabricshow
+     switch:admin> switchshow
+
+   Enable the swtich port if disabled.
+     switch:admin> portcfgpersistentenable -i <index>
+
+   Confirm the this host alias does not already exist on either fabric.
+     # sw-report.sh find alias <hostwwn>|<hostname>
+       or
+     switch:admin> alishow * | grep <alias> -A 1
+       or
+     switch:admin> alishow * | grep <wwn> -B 1
+
+
+c) Update the SAN configuration for each fabric.
+
+   Change the host alias to match the new WWN.
+     switch:admin> aliadd "<aliName>", "<member>[; <member>...]"
+     switch:admin> aliremove "<aliName>","<member>"
+
+   Add the new WWN to the zone used by the host.
+     switch:admin> zoneadd "<zonename>","<member>"
+       or
+     switch:admin> zoneadd --peerzone "<zonename>" -members "<member>[; <member>...]"
+
+   Remove the old WWN from the zone.
+     switch:admin> zoneremove "<zonename>","<member>"
+       or
+     switch:admin> zoneremove --peerzone "<zonename>" -members "<member>[; <member>...]"
+
+   Save the changes to the SAN fabric.
+     switch:admin> cfgsave
+     switch:admin> cfgenable "<cfgName>"
+
+
+d) Update the SAN fabric switch portname. (skip for virtual hosts)
+
+   Confirm the index/port for this host is available (no entry).
+     # sw-report.sh find port <hostwwn>|<hostname>
+       or
+     switch:admin> portname
+
+   Create the portname entry.
+     switch:admin> portname -i <index> -n "<name>"
+
+
+Note:
+
+Becuase this change will be disruptive, it should be coordinated with the OS and Application Admins, and proceed only after the host has been shutodown and/or is offline. Proceed to Migrating host on the SAN (storage array) after completing this procedure.
+
+--
+
+Title: Is this host currently configured on the SAN fabric?
+ Date: 30-Jun-2021
+ Tags: admin, SAN, switch, find, locate
+
+Search the switch aliases to determine if the host has an alias and has been zoned to storage on the SAN fabric. Perform this check before attempting to add, delete, or reclaim SAN storage following host decomission.
+
+
+1. Search for the host alias.
+
+   # sw-report.ah find alias <hostwwn>|<hostname>
+     or
+   switch:admin> alishow * | grep <hostwwn>|<hostname> -B 1
+
+
+2. Identify all of the storage arrays currently zoned to this host.
+
+   # sw-report.sh find zone <hostwwn>|<hostname>
+     or
+   switch:admin> zoneshow * | grep <hostwwn>|<hostname> -A 10 -B 10
+
+--
+
+Title: Identify the host OS to help determine whom to contact.
+ Date: 30-Jun-2021
+ Tags: admin, SAN, find, locate
+
+When the OS type is unknown, lookup this information stored within the Host Group data on the Hitachi storage arrays. This can later be used to help determine which Host Admin to contact when dealing with SAN storage issues for this server.
+
+
+1. Lookup the HostGroup information for this server.
+
+   # cci-report.sh <array_serial> hostgrp <hostname>
+
+--
+
+Title: Troubleshoot host storage errors within the SAN fabric.
+ Date: 07-Oct-2022
+ Tags: admin, SAN, switch, host
+
+Sometimes a host will start reporting storage errors, which are due to some component within the data storage path that is failing. This is something that should be resolved right away, since the there now exists a single point of failure, which can no longer guarantee server uptime should another disruption occur. Depending on where the failure is, will determine how quick it is located and repaired. A cable failure will take more time to correct.
+
+
+a) Review the SAN storage configuration.
+
+   Collect the host HBA WWNs for both SAN fabrics.
+     # cci-report.sh <serial> hostgrp <host>
+
+
+b) Review edge switch information where the host is connected.
+
+   Identify the switch where the host is attached. Note the port speed and status.
+     # sw-report.sh <switch> find port <hostname>|<WWN>
+
+   Collect porterrors, both for the host, and the ISLs to the core switch.
+     switch-admin> porterrshow
+
+   Check the SFP port speed and power levels. Low power levels indicate a bad SFP.
+     switch-admin> sfpshow <port>
+
+   Check the fabric log. Note recent switch port errors matching the host or ISL connections.
+     switch-admin> fabriclog -s
+
+
+c) Review core switch information, if no issues were discovered in the prior step.
+
+   Identify the switch port where the ISLs are connected. Note the port speed and status.
+     # sw-report.sh <switch> find port <hostname>|<WWN>
+
+   Collect porterrors, both for the host, and the ISLs to the core switch.
+     switch-admin> porterrshow
+
+   Check the SFP port speed and power levels. Low power levels indicate a bad SFP.
+     switch-admin> sfpshow <port>
+
+   Check the fabric log. Note recent switch port errors matching the host or ISL connections.
+     switch-admin> fabriclog -s
+
+
+d) Replace the SFP or fibre, if errors were found.
+
+   Contact someone from the DC Infrastructure team to perform the hardware replacement.
+
+   Confirm with the host Sys Admin that multipathing is working.
+
+   Disable the SFP module on the switch(es) used by this host.
+     switch-admin> portdisable -i <port>
+
+   Confirm the port has been disabled.
+     switch-admin> switchshow
+
+   Ask the DC Infrastructure team member to replace the SFP or fibre.
+
+   Enable the SFP module on the switch(es) used by this host.
+     switch-admin> portenable -i <port>
+
+   Confirm the SFP is functioning normally, checking the speed and power levels.
+     sfpshow <port>
+
+   If not, proceed to the path component, ie. edge ISL, fibre, core ISL, core storage.
+
+--
+
+Title: Apply TruFOS update to Brocade fabric switches using SANnav.
+ Date: 30-Jan-2025
+ Tags: admin
+
+These instructions were gathered from a Dell Technologies video showing how to apply Brocade TruFOS updates.
+
+
+a) Login to the SANnav Portal.
+
+b) Go to the Chassis list view.
+   Navigation Bar > SANnav > Services > FOS Certificate Management
+
+c) Display switch License ID, Firmware and TruFOS Expiration Date information.
+   HTTPS Certificates > TruFOS Certificates
+
+d) Select the switch to apply the new TruFOS Certificate.
+
+e) Apply the TruFOS Certificate.
+   Click 3-line menu > Apply TruFOS
+
+f) Select XML file downloaded from Broadcom.
+   Click file, then Open.
+   
+g) Review the chassis and the TruFOS Certificates, and click Next to proceed.
+
+h) TruFOS Certificates are being applied. Check the Events page for TruFOS installation status. The Chassis list view will display the updated TruFOS Expiration Date in 15-20 minutes.
+
+--
+
+Title: Download TruFOS Certifications for Brocade switches/directors.
+ Date: 27-Mar-2025
+ Tags: admin cert Broadcom
+
+These certs expire after a year, and once expired, they prohibit the ability to update switch firmware. Download and then update the SAN switches prior to any scheduled firmware updates on Brocade fabric switches or NetApp devices which have dedicated Brocade switches.
+
+
+a) Login to SANnav Management Portal from a browser on the PAW.
+
+b) Open the Configurations and Settings page.
+   Click on SANnav dashboard heading.
+
+c) Go to the Trusted FOS Certificate page.
+   Click TruFOS Certificates.
+
+d) Go to the Services menu.
+   Click Services.
+
+e) Open the Chassis view.
+   Click on FOS Certificate Management.
+
+f) Show the License IDs for all chassis.
+   Click on TruFOS Certificates link
+
+g) Capture the chassis data.
+   Hightlight table, then Ctrl+C.
+
+h) Collect the License ID field for every switch/director.
+
+i) Go to the License Management Page.
+   https://support.broadcom.com/group/licensing/home
+
+j) Open Trusted FOS Certificate Request window.
+   Click on TruFOS Certificates text.
+
+k) Add the switch LID entries to the form.
+   Click the ADD button to enter up to 10 LID slots. Cut&Paste each from data collected earlier.
+
+l) Generate TruFOS Certificates.
+   Click on the Submit button. Links to each certificate will appear after a short delay.
+
+m) Download the TruFOS Certificates.
+   Click on each link to download to your local workstation/pc.
+
+--
+
+Title: Configuring IP Addresses on Director
+ Date: 28-Nov-2024
+ Tags: admin, new, SAN, switch, brocade
+
+This device contains three IP addresses, each configured using the ipaddrset command. IP addresses are required for both CP blades (CP0 and CP1) and for chassis management (shown as SWITCH under the ipaddrshow command) in the device.
+
+Following are the default IP addresses and host names for the device:
+- 10.77.77.75 / CP0 (the CP blade in slot 1 at the time of configuration)
+- 10.77.77.74 / CP1 (the CP blade in slot 2 at the time of configuration)
+
+Use one of the following formats for IPv4 or IPv6 addressing when entering the IP address using the ipaddrset command:
+
+- If using an IPv4 IP address, enter the IP address in dotted-decimal notation as prompted.
+  Ethernet IP Address: [192.0.2.0]
+
+- If using an IPv6 address, enter the network information in colon-separated notation as prompted.
+  device:admin> ipaddrset -ipv6 --add 2001:DB8::/32
+
+Note: Resetting an IP address while the device has active IP traffic or has management and monitoring tools running, such as DCFM, Fabric Watch, and SNMP can cause traffic to be interrupted or stopped.
+
+
+Complete the following steps to set the IP addresses for the device.
+
+a) Log on to the device through a serial console connection to the active CP blade.
+
+   The active CP is indicated by an illuminated blue LED on the blade front panel. If you are already logged on through a console port, you can determine whether you are logged in to the active or standby CP by entering hashow at the prompt. The following example shows the local login at CP1, which is the active blade.
+
+     swDir:admin> hashow
+     Local CP (Slot 2, CP1): Active, Cold Recovered
+     Remote CP (Slot 1, CP0): Standby, Healthy
+     HA enabled, Heartbeat Up, HA State synchronized
+
+b) Configure the chassis management IP address by entering the ipaddrset -chassis command:
+
+     swDir:admin> ipAddrSet -chassis
+
+   Enter the required information at the prompts. Specify the -chassis IP address. The -sw 0 IP address is not valid on this device.
+
+   Note: The addresses 10.0.0.0 through 10.0.0.255 are reserved and used internally by the device. External IPs must not use these addresses.
+
+   Following is an example configuration for setting the chassis IP address.
+
+     swDir:admin> ipaddrset -chassis
+     DHCP [Off]:
+     Ethernet IP Address [10.0.0.0]:192.0.2.2
+     Ethernet Subnetmask [255.0.0.0]:255.255.255.0
+     IP address is being changed...
+
+   At this point, you are disconnected from the management session. You must log in again, using the newly configured IP address.
+
+c) Set up the CP0 IP address by entering the ipaddrset -cp 0 command:
+
+      swDir:admin> ipAddrSet -cp 0
+
+   Enter the required information at the prompts. Following is an example configuration for setting the CP0 IP address.
+
+     swDir:admin> ipaddrset -cp 0
+     DHCP [Off]:
+     Host Name [cp0]:
+     Ethernet IP Address [10.0.0.0]:192.0.2.3
+     Ethernet Subnetmask [255.0.0.0]:255.255.255.0
+     Gateway IP Address [10.0.0.0]:192.0.2.1
+     IP address is being changed...
+     Done.
+
+d) Set up the CP1 IP address by entering the ipaddrset -cp 1 command:
+
+      swDir:admin> ipAddrSet -cp 1
+
+   Enter the required information at the prompts. The following is an example configuration for setting the CP1 IP address.
+
+   Following is sample configuration for setting the CP1 IP address:
+
+     swDir:admin> ipaddrset -cp 1
+     DHCP [Off]:
+     Host Name [cp1]:
+     Ethernet IP Address [10.0.0.0]:192.0.2.4
+     Ethernet Subnetmask [255.0.0.0]:255.255.255.0
+     Gateway IP Address [10.0.0.0]:192.0.2.1
+     IP address is being changed...
+     Done.
+
+--
+
+Title: Import Firmware Files to the SANnav Repository
+ Date: 17-Apr-2025
+ Tags: admin, new, SAN, switch, brocade
+
+The firmware files must be imported in the SANnav repository to upgrade or downgrade the switch firmware from internal storage.
+
+Each firmware package could contain the following three files:
+
+  •.gz or .tar (mandatory) - the firmware file.
+
+  •.md5 (optional) - this is a checksum file that validates the firmware file before importing the file into the SANnav server repository. The check is triggered automatically while importing and an error message displays if the .gz file is not valid.
+
+  •.pdf (optional) - firmware release notes.
+
+
+To import a new firmware package to the repository, perform the following steps:
+
+a) Click the Settings (gear) icon in the left navigation bar, and then select SAN Configuration > FOS Version Management.
+
+b) Select the Repository tab.
+
+c) Click Import, then click + Select Files to import to select the firmware file from your local machine.
+
+d) Browse through the folder to select the firmware file and click Open to import the selected files to the SANnav repository.
+  
+   Note: A .gz or .tar file must be imported.
+
+e) Click + Add more files to add the other files (.md5 or .pdf).
+
+   Note: When .tar.gz, .pdf, and .md5 files are selected, the + Add more files option will not be present.
+
+f) Click Import. The files are saved in the default SANnav repository. 
+   ("<install_home>/data/filetransfer/Firmware/Switches")
+
+--
+
+Title: Update FOS Firmware on one or more switches using SANnav.
+ Date: 17-Apr-2025
+ Tags: admin, new, SAN, switch, brocade
+
+You can update switch firmware to enhance its feature set and address bug fixes. 
+
+The firmware update can come from an internal or external location.
+
+Note: To update a switch using internal storage, you must first save the firmware files to the SANnav repository (see Importing Firmware Files to the Repository).
+
+Note: You must have read and write privileges to access FOS Version Management. An administrator who has access to FOS Version Management can grant you the necessary permissions. Refer to the User preference section to setup your Area of Responsibility (AOR) and Roles.
+
+To update firmware for one or more switches, perform the following steps:
+
+a) Click the Settings (gear) icon in the left navigation bar, and then select SAN Configuration > FOS Version Management.
+
+b) Click the More icon on the top right corner of the window, and then select Bulk Edit.
+
+c) Select one or more switches to update.
+
+   Note: If more than one switch was selected, a common firmware is sought. If that doesn't exist, the firmware drop-down will be empty.
+
+   Note: Ensure that you do not skip the supported firmware path for the selected switch.
+
+d) Select Edit on the upper right navigation bar, and then click Update.
+
+e) Select Internal or External from the location drop-down to update the selected switches.
+
+   - If you select Internal as the location, select the Firmware that was imported in the SANnav repository and Protocol (SCP or SFTP).
+
+   - If you select External as the location, enter the Path to the (.gz or .tar) file where the firmware file was extracted, select the Protocol (SCP or SFTP or FTP), enter the Host name or IP address, and enter the login credentials for the external server. You can also click the Save login information check box to save your login information for the future use.
+
+   Note: If you change the protocol, the previously saved login information will not be retained. For example, if you saved login information with SCP protocol and then you update firmware using SFTP or FTP protocol, you must re-enter the login information.
+
+   Note: User credentials are saved only after a successful firmware update.
+
+f) Click OK to begin updating the firmware.
+   Click OK in the confirmation dialogue box.
+
+g) Click down arrow to select View on any switch in the Outputs tab to view the firmware update status. 
+   The output tab displays both success and failure reports.
+
+
+System Behavior
+
+When you select multiple switches for firmware update, a parallel firmware download is triggered based on the following scenarios:
+
+  - Chassis without Brocade SX6 Extension Blade.
+
+  - Chassis with Brocade SX6 Extension Blade running with Fabric OS version 8.2.0 and later.
+
+  - Fixed port switches not connected to the same fabric, including logical fabrics.
+
+  - Brocade 7840 to Brocade 7840 without HA online tunnel.
+
+When you select multiple switches for firmware update, a serial firmware download is triggered based on the following scenarios:
+
+  - All fixed port switches which belong to the same fabric or pizza box switches and are connected via Inter-Fabric Link (IFL).
+
+  - Brocade 7840 to Brocade 7840 with HA online tunnel.
+
+  - Chassis with Brocade SX6 Extension Blade having HA online tunnel running with Fabric OS version 8.2.0 and later.
+
+
+Failure cases
+
+Downgrading a seed switch impacts the fabric and will display a warning message saying the same thing, "Downgrading the firmware on seed switch will have impact on the fabric".
+
+If you attempt to upgrade a switch while skipping the supported firmware path, the update will fail and display the message "Non disruptive firmware download is not supported when firmware download with two versions apart. Please try again from the CLI with single mode option enabled."
+
+--
+
+Title: Backing Up Switch Configurations using SANnav
+ Date: 17-Apr-2025
+ Tags: admin, new, SAN, switch, brocade
+
+You can back up switch configurations on demand. You can also set up a schedule for backing
+up switch configurations on a regular basis.
+
+You must have Configuration File Manager privilege with read permission to back up a configuration immediately and with read-write permission to schedule a backup.
+
+a) Click the Settings (gear) icon, and then select SAN Monitoring > Configuration and Operations Monitoring Policy.
+
+b) Click Backup.
+
+c) Set up a schedule for future backups or back up the configuration immediately.
+
+   - If you want to set up a regular schedule for backups, select Schedule Backup and fill out the backup schedule.
+   - If you want to back up a configuration immediately, click Backup Now.
+
+When configuring the backup, you can select individual switches to back up, fabrics, or both. If you select fabrics, then all switches in the selected fabrics are backed up.
+
+For the fabric, all switches in the fabric are backed up in separate files. These configuration files are kept in the repository for 90 days, unless manually deleted before then.
+
+--
+
+Title: Restoring a Configuration using SANnav
+ Date: 17-Apr-2025
+ Tags: admin, new, SAN, switch, brocade
+
+If you regularly back up switch configurations, you can restore a switch configuration to a saved backup, should the need arise.
+
+Before you can restore a configuration to a switch, you must have at least one previously saved configuration for that switch.
+
+You must have Configuration File Manager privilege with read-write permissions.
+
+Note that restoring a configuration is a disruptive operation.
+
+a) Click the Settings (gear) icon, and then select SAN Monitoring > Configuration and Operations Monitoring Policy.
+
+b) Click Repository to display a list of the configuration backups.
+   The displayed list is for monitored switches only. If you want to see configuration backups for unmonitored switches, select Other from the Fabric drop-down list.
+
+c) Select the switch configuration you want to restore, and click Restore.
+   A switch can have more than one backup configuration, so be sure to select the correct configuration. You can search on the switch name to display only the configurations for that switch.
+
+You can restore only one configuration for a switch. If you select more than one configuration for the same switch, the Restore button is inactivated.
+
+You can select multiple switches to restore at the same time. For example, you can select a specific fabric and restore all switches in that fabric.
+
+--
+
+Title: SANnav License Renewal
+ Date: 08-Oct-2025
+ Tags: admin
+
+Every year the license for SANnav comes up for renewal. Follow the steps below, and submit the License Renewal Information file to our contact at Broadcom. He will send the new license 2 weeks after receipt of the P.O. Contact the datacenter manager to confirm P.O. was sent to Broadcom.
+
+
+1. Collect the License Renewal Informatin.
+
+   a) Login to the SANnav Portal.
+
+   b) Collect the current license information.
+      SANnav Management Portal > SANnav > Services > SANnav Licensing > [Serial No]
+
+      Server UID
+      License Key
+      License Serial #
+      License Type
+      Status
+      Supported Port Count
+      Current Managed Port Count
+      Expiration Date
+
+   c) Review License Renewal Information
+      Click Actions > Export Renewal Request
+
+      Current License Expiration Date:
+      Renewal License Start Date:
+      Renewal License End Date:
+      Renewal Subscription Days:
+
+   d) Specify the Renewal License End Date for your license
+      Confirm the end date, then click Export button to export.
+
+   e) Provide the License Renewal Information file to your vendor after exporting.
+
+
+2. Update the license.
+
+   a) Login to the SANnav Portal.
+
+   b) The product license has expired. Click OK to add a new license.
+      Click OK button.
+
+   c) Add New License.
+      Locate the .xml file sent from the vendor and paste here. Click OK to complete.
+
