@@ -14,7 +14,7 @@
 # Initialize global variables.
 
 script="howto"
-path="/opt/docs"
+path="$HOME/Documents/howto"
 basePath="`echo $path | sed 's/\/[^\/]*//3g'`"
 
 pass1Data="$HOME/.howto-pass1.$$"
