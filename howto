@@ -14,8 +14,8 @@
 # Initialize global variables.
 
 script="howto"
-path="$HOME/Documents/howto"
-basePath="`echo $path | sed 's/\/[^\/]*//3g'`"
+path="$HOME/Documents/HowTo"
+basePath="$HOME"
 
 pass1Data="$HOME/.howto-pass1.$$"
 pass2Data="$HOME/.howto-pass2.$$"
@@ -25,7 +25,7 @@ depth=512                       # Limit number of initial hits for faster result
 
 rows=$(tput lines)                                 # Terminal session screen height.
 cols=$(tput cols)                                  # Terminal session screen width.
-matches=$(( (rows - 10 ) / (6 + content) ))         # Calculate how many results will fit.
+matches=$(( (rows - 10 ) / (6 + content) ))        # Calculate how many results will fit.
 
 BOLD="$(tput bold)"             # Tagline
 GREEN="$(tput setaf 2)"         # Content File path.
@@ -343,7 +343,7 @@ cleanupText ()
     sed 's/^M//' | \
     sed '/^--$/,$ d' | \
     sed '/^---$/,$ d' | \
-    sed '1{/^$/d}' | \
+    sed '1{/^$/d;}' | \
     cat -s | \
   # fmt -s -w $(( cols - 10 )) | \
     bulletAlign $(( cols - 10 )) | \
@@ -410,29 +410,14 @@ bulletAlign ()
 
           # Look for bullet. If found, set indent length.
 
-
-          switch ($1) {
-              case /[A-Z]\./ :
-              case /[A-Z])/ :
-              case /[a-z]\./ :
-              case /[a-z])/ :
-              case /[0-9]\./ :
-              case /[0-9])/ :
-              case /Note:/ :
-              case /Tip:/ :
-              case /Important:/ :
-              case /Caution:/ :
-              case /Warning:/ :
-              case "-" :
-              case "$" :
-              case "#" :
-                  indent = index($0, $1) + length($1);
-                  break;
-
-              default :
-                  indent = index($0, $1) - 1;
-              }
-
+          # Look for bullet. If found, set indent length.
+          if ($1 ~ /^([A-Za-z0-9][.)]|Note:|Tip:|Important:|Caution:|Warning:)$/ || \
+              $1 == "-" || $1 == "$" || $1 == "#") 
+          
+              indent = index($0, $1) + length($1);
+          
+          else 
+              indent = index($0, $1) - 1;
 
         # Print the line with auto wrap and indent.
 
