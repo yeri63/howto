@@ -1,2 +1,9 @@
 # howto
+
+![Screenshot of HowTo](https://github.com/yeri63/howto/blob/master/howto.png)
+
+<p>This project was created to quickly locate procedures that I started collecting to produce consistent results, especially in light of Change Control policies in use at most companies, to limit risk of accidental outages. This very much felt like a RunBook collection I relied on at Sun Microsystems, which was a formal collection of guides for each product we installed, used to document the configuration, implement, then leave as one of the deliverables. It helped our team to provide consistent installs, and a documentation trail that could be used to quickly get up to speed should anyone need to re-visit that customer in the future for an upgrade or troubleshoot.</p>
+<p>I found the idea of keeping a storage runback very helpful, and one way to quickly recall steps for all storage tasks, invaluable for infrequent tasks that without this, would require a quickly search through notes, or contacting other storage engineers in our group for assistance. That peer support quickly vanished once I left Sun and started working as one of the principal storage admins managing block storage at large corporations.</p>
+<p>With the development of the lookup tool for recalling work, documenting storage changes, impromptu notes, etc. I thought why not take that same tool and retool it to provide that same speed of access, ability to search using multiple keys, to recall storage tasks, just like a runback, both to document the changes, and follow the same sequence of steps to guarantee consistent results and minimize risk to the environment. With that idea, the howto script was born, becoming one of the most valuable tools I have in my arsenal.</p>
+
 Quickly lookup a documented procedure, similar in functionality as man pages in Linux.
