@@ -25,7 +25,7 @@ hitachi.txt
     
     --
 
-    Title: Create a Shadow Image on Hitachi array using raid com.
+    Title: Create a Shadow Image on Hitachi array using raidcom.
      Date: 08-Dec-2025
      Tags: admin, replication, create, shadowimage
 
