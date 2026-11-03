@@ -35,12 +35,12 @@ hitachi.txt
   
 ## How to Search
 
-<p>To perform a search, enter one or more keywords after the lookup command. Use more keywords to narrow down the number of hits, otherwise you'll end up with a large list to review. The order of keywords is critical, ie. the results will be all articles containing keyword1, and from those results, all articles containing keyword2, etc. You also have the option to search for all articles not containing a keyword by attaching a "-" in front of that word.</p>
+<p>To perform a search, enter one or more keywords after the howto command. Use more keywords to narrow down the number of hits, otherwise you'll end up with a large list to review. The order of keywords is critical, ie. the results will be all articles containing keyword1, and from those results, all articles containing keyword2, etc. You also have the option to search for all articles not containing a keyword by attaching a "-" in front of that word.</p>
 
 ## Scanning Hits and Selecting Article to View
 
 <p>The hits are displayed as a list of numbered results. Each hit will show the title, filename, keyword hit line number, and a short 2-3 line excerpt containing one or more keywords. Below this list, on the bottom edge of the screen is the list of pages of hit results. The height of the terminal window determines how many results are shown per page, which then determines the number of pages.</p>
-<p>The terminal screen dimensions can be changed, to display more content by increasing the height, or displaying document tables without cutting off the right edge by increasing the width, or both. If the dimensions are changed while reading a document, you will need to exit that document and re-enter, in order for the word wrap function to adjust to the new dimensions.</p>
+<p>The terminal screen dimensions can be changed to display more rows by increasing the height, or displaying more columns, sometimes needed for tables by increasing the width, or both. If the dimensions are changed while reading a document, you will need to exit that document and re-enter, in order for the word wrap function to adjust to the new dimensions.</p>
 <p>To advance to the next page of hits, press the <code>&lt;spacebar&gt;</code>, press <code>b</code> to go back, or <code>q</code> to quit and exit.</p>
 <p>To open up a result to view, enter the number next to it. Once inside, press the letter <code>n</code> to go to the next keyword instance, or <code>p</code> to go back to the previous one. Use the <code>&uparrow;</code> and <code>&downarrow;</code> to move one line up or down, and <code>q</code> to quit and return to the current page of search results.</p>
 <div align="center">
