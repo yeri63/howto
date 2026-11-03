@@ -1,8 +1,9 @@
 # howto
-
+<div align="center">
+  
 ![Screenshot of HowTo](https://github.com/yeri63/howto/blob/master/howto.png)
-
-<p>Here's a tool which allows you to quickly locate notes, process, or established procedure to produce repeatable results, especially in light of Change Control policies in use at most companies, to limit risk of accidental outages. The information contained is very similar to the implementation section of a runback, like the PDF versions I relied on at Sun Microsystems. Those were a collection of equipment guides for the SAN products we installed, used primarily to document the configuration, an implementation guide, and a customer deliverable. It helped our team to provide consistent installs, and a documentation trail for future reference.</p>
+</div>
+<p>Here's a tool which allows you to quickly locate notes, process, or established procedure to produce repeatable results, especially in light of Change Control policies in use at most companies, to limit risk leading to an outage. The information contained is very similar to the implementation section of a runback, like the PDF versions I relied on at Sun Microsystems. Those were a collection of equipment guides for the SAN products we installed, used primarily to document the configuration, an implementation guide, and a customer deliverable. It helped our team to provide consistent installs, and a documentation trail for future reference.</p>
 <p>I found the idea of keeping a storage runback very helpful, and one way to quickly recall steps for all storage tasks, invaluable for infrequent tasks that without this, would require a quickly search through notes, or contacting other storage engineers in our group for assistance. That peer support quickly vanished once I left Sun and started working as one of the principal storage admins managing block storage at large corporations.</p>
 <p>With the development of the lookup tool for recalling work, documenting storage changes, impromptu notes, etc. I thought why not take that same tool and retool it to provide that same speed of access, ability to search using multiple keys, to recall storage tasks, just like a runback, both to document the changes, and follow the same sequence of steps to guarantee consistent results with minimal risk to the environment. With that idea, the howto script was born, becoming one of the most valuable items in my tool belt.</p>
 
