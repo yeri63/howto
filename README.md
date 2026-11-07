@@ -10,7 +10,7 @@
 
 ## File Structure
 
-* Create a folder titled HowTo in the Documents folder. This will contain all of the files with the data to be saved and searched. Create a text file with the of the content it will contain, using the format "name.txt". I used vendor names, since this was used to document processes unique to each vendor.
+* Create a folder “HowTo” in the Documents folder. This will contain all of the files with the data to be saved and searched. Create a text file with the of the content it will contain, using the format "name.txt". I used vendor names, since this was used to document processes unique to each vendor.
 * This will be a Linux, not Windows ASCII text file, using LF instead of CR/LF at the end of every line. Content is stored and retrieved as articles, and article sections. An article can contain multiple sections, or none. All date, article and section markers should be entered between 2 blank lines, to help the search engine parse content.
 * The first entries for each procedure should contain the Title, Date, and Tags, following by a brief description. The date was always updated anytime changes were made, to reflect the age of the information. Tags were added to include key words used to describe this procedure, basically words that may not exist within the content, but may be used to reference this and other similar articles.
 * Be sure to end each article with a line beginning with 2 dashes, ie. "--", to separate this from other articles or procedures in this file. Make sure the last article also ends with a line with beginning with 2 dashes.
